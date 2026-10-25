@@ -1,16 +1,35 @@
 import { test, expect } from '@playwright/test'
+test('input locates words, shows spatial neighborhoods, limits to ten and clears', async ({ page }) => {
+  await page.goto('/')
+  await expect(page.locator('.statusbar')).toContainText('1,000 WORDS')
+  const input = page.getByRole('textbox', { name: '搜索词语' })
+  for (const word of ['apple', '苹果', 'king', 'woman', 'car', 'orange', 'man', 'queen', 'banana', 'grape']) {
+    await input.fill(word); await input.press('Enter')
+  }
+  await expect(page.locator('.selected-word')).toHaveCount(10)
+  await expect(page.getByTestId('neighborhoods').locator('details')).toHaveCount(10)
+  await input.fill('lemon'); await input.press('Enter')
+  await expect(page.locator('.selected-word')).toHaveCount(10)
+  await expect(page.getByRole('status')).toContainText('10')
+  await page.getByRole('button', { name: '清空', exact: true }).click()
+  await expect(input).toHaveValue('')
+  await expect(page.locator('.selected-word')).toHaveCount(0)
+  await expect(page.getByTestId('neighborhoods')).toHaveCount(0)
+})
 test('search, compare, switch projections, analogy, and clear', async ({ page }) => {
   const errors: string[] = []
   page.on('pageerror', error => errors.push(error.message))
   await page.goto('/')
   await expect(page.locator('.statusbar')).toContainText('1,000 WORDS')
-  for (const word of ['apple', 'orange', 'car']) {
+  await expect(page.locator('select').first()).toHaveValue('fasttext-en-zh-v1')
+  for (const word of ['apple', '苹果', 'car']) {
     await page.getByRole('textbox', { name: '搜索词语' }).fill(word)
     await page.locator('.search-results button').filter({ hasText: new RegExp(`^${word}`) }).first().click()
   }
   await expect(page.locator('.selected-word')).toHaveCount(3)
   const matrix = page.getByTestId('similarity')
   await expect(matrix).toContainText('apple')
+  await expect(matrix).toContainText('苹果')
   const before = await matrix.innerText()
   await page.getByRole('button', { name: 'PCA', exact: true }).click()
   expect(await matrix.innerText()).toBe(before)

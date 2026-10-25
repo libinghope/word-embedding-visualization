@@ -24,3 +24,21 @@ it('discards an analogy response when input is invalidated', async () => {
   await pending
   expect(store.analogy).toBeNull()
 })
+it('computes spatial neighborhoods for every input and updates for projection and radius', () => {
+  vi.stubGlobal('fetch', vi.fn(() => new Promise(() => {})))
+  const store = useExplorer()
+  store.points = [
+    { id: 0, word: 'apple', positions: { umap: [0, 0, 0], pca: [0, 0, 0] } },
+    { id: 1, word: '苹果', positions: { umap: [0.1, 0, 0], pca: [0.5, 0, 0] } },
+    { id: 2, word: 'car', positions: { umap: [0.9, 0, 0], pca: [0.05, 0, 0] } }
+  ]
+  store.select(0); store.select(2)
+  expect(store.neighborhoods.map(n => n.words.map(w => w.point.word))).toEqual([['苹果'], []])
+  store.projection = 'pca'
+  expect(store.nearbyIds).toEqual([2, 0])
+  store.neighborhoodRadius = 0.6
+  expect(store.nearbyIds).toContain(1)
+  store.clear()
+  expect(store.neighborhoods).toEqual([])
+  expect(store.focus).toBeNull()
+})

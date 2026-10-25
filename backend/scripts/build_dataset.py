@@ -104,7 +104,7 @@ def peak_memory_bytes():
 
 def write_dataset(output: Path, words: list[str], vectors: np.ndarray, *, synthetic: bool,
                   model: str, source_url: str, license_note: str, source_hash: str,
-                  seed_hash: str, report: dict, source_format="generated", extract_mode="synthetic"):
+                  seed_hash: str, report: dict, source_format="generated", extract_mode="synthetic", provenance: dict | None = None):
     start = time.perf_counter()
     from sklearn.decomposition import PCA
     from sklearn.manifold import trustworthiness
@@ -151,6 +151,8 @@ def write_dataset(output: Path, words: list[str], vectors: np.ndarray, *, synthe
             "numeric_policy": {"target_relative_epsilon": 1e-12, "math_atol": 1e-6, "math_rtol": 1e-6,
                                "projection_atol": 1e-5, "projection_rtol": 1e-5},
             "build": build, "checksums": {"source": source_hash, "seed_file": seed_hash, "tokens": token_hash(words)}}
+    if provenance is not None:
+        meta['provenance'] = provenance
     output.parent.mkdir(parents=True, exist_ok=True)
     staging = Path(tempfile.mkdtemp(prefix=".build-", dir=output.parent))
     folder = staging / output.name

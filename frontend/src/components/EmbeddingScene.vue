@@ -44,9 +44,9 @@ function rebuild() {
 function updateSelection() {
   if (!cloud) return
   const colors = cloud.geometry.getAttribute('color') as THREE.BufferAttribute
-  const selected = new Set(store.selected), highlighted = new Set(store.highlights)
+  const selected = new Set(store.selected), highlighted = new Set(store.highlights), nearby = new Set(store.nearbyIds)
   store.points.forEach((p, i) => {
-    const color = new THREE.Color(selected.has(p.id) ? '#ffe2a0' : p.id === hovered ? '#ffffff' : highlighted.has(p.id) ? '#b4a0ff' : '#5b9aa7')
+    const color = new THREE.Color(selected.has(p.id) ? '#ffe2a0' : p.id === hovered ? '#ffffff' : nearby.has(p.id) ? '#9ee8c5' : highlighted.has(p.id) ? '#b4a0ff' : store.selected.length ? '#29404e' : '#5b9aa7')
     colors.setXYZ(i, color.r, color.g, color.b)
   }); colors.needsUpdate = true
   if (lines) { scene.remove(lines); disposeObject(lines) }
@@ -63,6 +63,8 @@ function updateSelection() {
     const p = position(id); if (!p) continue
     const marker = new THREE.Mesh(new THREE.OctahedronGeometry(0.028), new THREE.MeshBasicMaterial({ color: '#ffe2a0', wireframe: true }))
     marker.position.fromArray(p); markers.add(marker)
+    const boundary = new THREE.Mesh(new THREE.SphereGeometry(store.neighborhoodRadius, 20, 12), new THREE.MeshBasicMaterial({ color: '#9ee8c5', wireframe: true, transparent: true, opacity: 0.07, depthWrite: false }))
+    boundary.position.fromArray(p); markers.add(boundary)
   }
   scene.add(markers)
 }
@@ -111,7 +113,7 @@ function draw(now: number) {
     if (t === 1) animation = null
   }
   controls.update(); renderer.render(scene, camera)
-  const ids = [...new Set([...store.selected, ...(hovered === null ? [] : [hovered]), ...store.highlights.slice(0, 5)])]
+  const ids = [...new Set([...store.selected, ...(hovered === null ? [] : [hovered]), ...store.nearbyIds, ...store.highlights.slice(0, 5)])]
   const occupied: { x: number; y: number; w: number }[] = []
   labels.value = ids.flatMap(id => {
     const p = position(id); if (!p) return []
@@ -153,7 +155,7 @@ onMounted(() => {
   } catch (e) { failure.value = `无法启动三维画布：${(e as Error).message}。可继续使用列表和数学面板。` }
 })
 watch(() => [store.points, store.projection], rebuild)
-watch(() => [store.selected.join(','), store.highlights.join(',')], updateSelection)
+watch(() => [store.selected.join(','), store.highlights.join(','), store.nearbyIds.join(','), store.neighborhoodRadius], updateSelection)
 watch(() => store.resetNonce, fit)
 watch(() => store.focus, value => {
   if (!value || !camera || !controls) return

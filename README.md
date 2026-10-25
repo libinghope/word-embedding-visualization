@@ -25,6 +25,21 @@ Linux/macOS 将 `.venv\Scripts\python.exe` 换为 `.venv/bin/python`，路径分
 
 **synthetic-demo 使用固定随机种子生成，不能用于真实语义解释。** 页面有持续提示；真实数据存在时默认优先选择真实数据。不隐式下载模型、不在请求期间运行降维，也不自动用假数据替换损坏的数据集。
 
+## 当前中英真实数据
+
+默认优先加载 `fasttext-en-zh-v1`：从已下载的 fastText RCSLS 对齐模型提取 768 个英文词、232 个中文词，共 1,000 × 300 维。词表固定在 `backend/data/fasttext_seed.json`，中文和英文共同拟合 PCA/UMAP，不混入 Google News 向量。搜索与最近邻候选范围为此子集，不是完整模型词表。
+
+```powershell
+# 已下载模型和对应 .vec.json 校验清单后构建；已有输出不会覆盖
+.\.venv\Scripts\python.exe backend\scripts\build_fasttext_dataset.py
+# 已构建时直接启动
+.\.venv\Scripts\python.exe scripts\dev.py
+```
+
+构建器流式读取两份模型并核验 SHA-256、行数、维度、有限值和词表覆盖；来源与许可保存在生成数据的 metadata.json 中。数据依据 CC-BY-SA-3.0 使用。示例：搜索 `apple`、`苹果`，加入比较以查看原始向量的跨语言余弦相似度。
+
+2026-10-25 验证：37 项后端测试、9 项前端单元测试、4 项浏览器测试通过，类型检查与生产构建通过。浏览器测试覆盖中文搜索、跨语言比较及 PCA/UMAP 切换。此子集 PCA 三维解释方差为 17.17%，UMAP 局部可信度为 0.9709。
+
 ## 真实 Word2Vec 数据
 
 下载约 1.74 GB（约 1.62 GiB），需额外磁盘空间用于下载缓存。流式提取不将整个 300 万词模型装入内存，但仍须扫描压缩源文件。来源与许可状态见 [数据说明](docs/data-sources.md)。

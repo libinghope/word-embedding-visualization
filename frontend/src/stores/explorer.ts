@@ -12,13 +12,21 @@ export const useExplorer = defineStore('explorer', () => {
   const byId = computed(() => new Map(points.value.map(p => [p.id, p])))
   const selectedPoints = computed(() => selected.value.map(id => byId.value.get(id)!).filter(Boolean))
   const active = computed(() => activeId.value === null ? null : byId.value.get(activeId.value))
+  const neighborhoodRadius = ref(0.16)
+  const neighborhoods = computed(() => selectedPoints.value.map(center => ({
+    center,
+    words: points.value.filter(p => p.id !== center.id).map(point => ({ point,
+      distance: Math.hypot(...point.positions[projection.value].map((v, i) => v - center.positions[projection.value][i]!))
+    })).filter(p => p.distance <= neighborhoodRadius.value).sort((a, b) => a.distance - b.distance || a.point.id - b.point.id)
+  })))
+  const nearbyIds = computed(() => [...new Set(neighborhoods.value.flatMap(n => n.words.map(w => w.point.id)))])
   const highlights = computed(() => [...new Set([...(neighbors.value?.results.map(w => w.id) || []), ...(analogy.value?.results.map(w => w.id) || [])])])
   async function initialize() {
     loading.value = true; error.value = ''
     try {
       datasets.value = await request<DatasetSummary[]>('/datasets')
       if (!datasets.value.length) throw new Error('没有可用数据集，请先按 README 构建数据，再点击重试。')
-      await loadDataset(datasets.value.find(d => d.data_kind === 'pretrained')?.dataset_id || datasets.value[0]!.dataset_id)
+      await loadDataset(datasets.value.find(d => d.dataset_id === 'fasttext-en-zh-v1')?.dataset_id || datasets.value.find(d => d.data_kind === 'pretrained')?.dataset_id || datasets.value[0]!.dataset_id)
     } catch (e) { error.value = (e as Error).message } finally { loading.value = false }
   }
   async function loadDataset(id: string) {
@@ -59,9 +67,10 @@ export const useExplorer = defineStore('explorer', () => {
   }
   function focusWord(id: number, add = false) {
     if (add) select(id, false)
+    if (add && !selected.value.includes(id)) return
     focus.value = { id, nonce: (focus.value?.nonce || 0) + 1 }
   }
-  function clear() { selected.value = []; activeId.value = null; void refreshMath() }
+  function clear() { selected.value = []; activeId.value = null; focus.value = null; notice.value = ''; resetNonce.value++; void refreshMath() }
   async function runAnalogy(terms: { positive: string[]; negative: string[] }) {
     const seq = ++analogySeq; analogy.value = null
     try {
@@ -71,5 +80,5 @@ export const useExplorer = defineStore('explorer', () => {
   }
   function cancelAnalogy() { ++analogySeq; analogy.value = null }
   return { datasets, datasetId, metadata, points, projection, selected, activeId, k, comparison, neighbors, analogy, loading, mathLoading,
-    error, mathError, notice, focus, resetNonce, byId, selectedPoints, active, highlights, initialize, loadDataset, refreshMath, select, focusWord, clear, runAnalogy, cancelAnalogy }
+    neighborhoodRadius, neighborhoods, nearbyIds, error, mathError, notice, focus, resetNonce, byId, selectedPoints, active, highlights, initialize, loadDataset, refreshMath, select, focusWord, clear, runAnalogy, cancelAnalogy }
 })
