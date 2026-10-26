@@ -1,8 +1,12 @@
 <script setup lang="ts">
-import { onMounted, onBeforeUnmount, ref, watch } from 'vue'
+import { computed, onMounted, onBeforeUnmount, ref, watch } from 'vue'
 import * as THREE from 'three'
 import { OrbitControls } from 'three/addons/controls/OrbitControls.js'
 import { useExplorer } from '../stores/explorer'
+import { useBridges } from '../stores/bridges'
+const bridge = useBridges()
+const sceneSelected = computed(() => bridge.enabled ? [...new Set([...bridge.idsA, ...bridge.idsB])] : store.selected)
+const sceneHighlights = computed(() => bridge.enabled ? (bridge.result?.results.map(r => r.id) || []) : store.highlights)
 const store = useExplorer(), host = ref<HTMLDivElement>(), failure = ref(''), hoverWord = ref(''), fps = ref(0)
 const labels = ref<{ word: string; x: number; y: number; selected: boolean }[]>([])
 let renderer: THREE.WebGLRenderer, scene: THREE.Scene, camera: THREE.PerspectiveCamera, controls: OrbitControls
@@ -44,25 +48,31 @@ function rebuild() {
 function updateSelection() {
   if (!cloud) return
   const colors = cloud.geometry.getAttribute('color') as THREE.BufferAttribute
-  const selected = new Set(store.selected), highlighted = new Set(store.highlights), nearby = new Set(store.nearbyIds)
+  const selected = new Set(sceneSelected.value), highlighted = new Set(sceneHighlights.value), nearby = new Set(bridge.enabled ? [] : store.nearbyIds)
   store.points.forEach((p, i) => {
-    const color = new THREE.Color(selected.has(p.id) ? '#ffe2a0' : p.id === hovered ? '#ffffff' : nearby.has(p.id) ? '#9ee8c5' : highlighted.has(p.id) ? '#b4a0ff' : store.selected.length ? '#29404e' : '#5b9aa7')
+    const domainColor = bridge.enabled && bridge.idsA.includes(p.id) ? (bridge.idsB.includes(p.id) ? '#ffe2a0' : '#80c7ff') : bridge.enabled && bridge.idsB.includes(p.id) ? '#ffa780' : null
+    const color = new THREE.Color(domainColor || (selected.has(p.id) ? '#ffe2a0' : p.id === hovered ? '#ffffff' : nearby.has(p.id) ? '#9ee8c5' : highlighted.has(p.id) ? '#b4a0ff' : sceneSelected.value.length ? '#29404e' : '#5b9aa7'))
     colors.setXYZ(i, color.r, color.g, color.b)
   }); colors.needsUpdate = true
   if (lines) { scene.remove(lines); disposeObject(lines) }
   const vertices: number[] = []
-  for (let i = 0; i < store.selected.length; i++) for (let j = i + 1; j < store.selected.length; j++) {
-    const a = position(store.selected[i]!), b = position(store.selected[j]!); if (a && b) vertices.push(...a, ...b)
+  if (!bridge.enabled) for (let i = 0; i < sceneSelected.value.length; i++) for (let j = i + 1; j < sceneSelected.value.length; j++) {
+    const a = position(sceneSelected.value[i]!), b = position(sceneSelected.value[j]!); if (a && b) vertices.push(...a, ...b)
+  }
+  if (bridge.enabled && bridge.focused !== null) {
+    const target = position(bridge.focused)
+    if (target) for (const id of sceneSelected.value) { const p = position(id); if (p) vertices.push(...p, ...target) }
   }
   lines = new THREE.LineSegments(new THREE.BufferGeometry().setAttribute('position', new THREE.Float32BufferAttribute(vertices, 3)),
     new THREE.LineBasicMaterial({ color: '#e7c889', transparent: true, opacity: 0.5 }))
   scene.add(lines)
   if (markers) { scene.remove(markers); disposeObject(markers) }
   markers = new THREE.Group()
-  for (const id of store.selected) {
+  for (const id of sceneSelected.value) {
     const p = position(id); if (!p) continue
     const marker = new THREE.Mesh(new THREE.OctahedronGeometry(0.028), new THREE.MeshBasicMaterial({ color: '#ffe2a0', wireframe: true }))
     marker.position.fromArray(p); markers.add(marker)
+    if (bridge.enabled) continue
     const boundary = new THREE.Mesh(new THREE.SphereGeometry(store.neighborhoodRadius, 20, 12), new THREE.MeshBasicMaterial({ color: '#9ee8c5', wireframe: true, transparent: true, opacity: 0.07, depthWrite: false }))
     boundary.position.fromArray(p); markers.add(boundary)
   }
@@ -91,7 +101,7 @@ function pointermove(event: PointerEvent) {
 }
 function pointerup(event: PointerEvent) {
   if (down?.valid && down.max <= 5 && Math.hypot(event.clientX - down.x, event.clientY - down.y) <= 5) {
-    const id = pick(event); if (id !== null) store.select(id)
+    const id = pick(event); if (id !== null) { if (bridge.enabled) bridge.focus(id); else store.select(id) }
   }
   down = null
 }
@@ -113,7 +123,7 @@ function draw(now: number) {
     if (t === 1) animation = null
   }
   controls.update(); renderer.render(scene, camera)
-  const ids = [...new Set([...store.selected, ...(hovered === null ? [] : [hovered]), ...store.nearbyIds, ...store.highlights.slice(0, 5)])]
+  const ids = [...new Set([...sceneSelected.value, ...(bridge.enabled && bridge.focused !== null ? [bridge.focused] : []), ...(hovered === null ? [] : [hovered]), ...(bridge.enabled ? [] : store.nearbyIds), ...sceneHighlights.value.slice(0, 5)])]
   const occupied: { x: number; y: number; w: number }[] = []
   labels.value = ids.flatMap(id => {
     const p = position(id); if (!p) return []
@@ -126,7 +136,7 @@ function draw(now: number) {
       const y = screenY + offset
       if (y < 8 || y > height - 30 || occupied.some(r => x < r.x + r.w + 4 && x + w + 4 > r.x && y < r.y + 24 && y + 24 > r.y)) continue
       occupied.push({ x, y, w })
-      return [{ word, x, y, selected: store.selected.includes(id) }]
+      return [{ word, x, y, selected: sceneSelected.value.includes(id) }]
     }
     return []
   })
@@ -155,7 +165,7 @@ onMounted(() => {
   } catch (e) { failure.value = `无法启动三维画布：${(e as Error).message}。可继续使用列表和数学面板。` }
 })
 watch(() => [store.points, store.projection], rebuild)
-watch(() => [store.selected.join(','), store.highlights.join(','), store.nearbyIds.join(','), store.neighborhoodRadius], updateSelection)
+watch(() => [sceneSelected.value.join(','), sceneHighlights.value.join(','), store.nearbyIds.join(','), store.neighborhoodRadius, bridge.enabled, bridge.focused, bridge.idsA.join(',')], updateSelection)
 watch(() => store.resetNonce, fit)
 watch(() => store.focus, value => {
   if (!value || !camera || !controls) return

@@ -14,11 +14,20 @@ from pydantic import BaseModel, ConfigDict, Field, StringConstraints, model_vali
 from starlette.exceptions import HTTPException
 
 from .services.dataset_service import ID_PATTERN, Registry
-from .services.embedding_service import DomainError, analogy, neighbors, similarity
+from .services.embedding_service import DomainError, analogy, neighbors, similarity, bridges
 from .models.schemas import DatasetSummary, PointsResponse, MetadataResponse, Word, ComparisonResponse, RankingResponse
 
 Token = Annotated[str, StringConstraints(strip_whitespace=True, min_length=1, max_length=128)]
 DatasetID = Annotated[str, StringConstraints(pattern=r"^[a-z0-9][a-z0-9_-]{0,63}$")]
+
+
+class BridgeQuery(BaseModel):
+    model_config = ConfigDict(extra='forbid', allow_inf_nan=False)
+    dataset_id: DatasetID
+    a: list[Token] = Field(min_length=1, max_length=5)
+    b: list[Token] = Field(min_length=1, max_length=5)
+    k: int = Field(default=20, ge=1, le=50, strict=True)
+    threshold: float = Field(default=0, ge=0, le=1)
 
 
 class Comparison(BaseModel):
@@ -129,6 +138,10 @@ def create_app(data_root: Path | None = None) -> FastAPI:
     @app.post("/api/v1/analogy", response_model=RankingResponse)
     def arithmetic(body: Analogy):
         return analogy(get_dataset(body.dataset_id), body.positive, body.negative, body.k, body.exclude_input_words)
+
+    @app.post('/api/v1/bridges')
+    def bridge_candidates(body: BridgeQuery):
+        return bridges(get_dataset(body.dataset_id), body.a, body.b, body.k, body.threshold)
 
     return app
 

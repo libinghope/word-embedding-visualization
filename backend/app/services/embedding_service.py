@@ -21,6 +21,31 @@ def space(dataset: Dataset) -> str:
     return f"original_embedding_{dataset.metadata['embedding_dimensions']}d"
 
 
+def bridges(dataset: Dataset, a: list[str], b: list[str], k: int, threshold: float) -> dict:
+    a, b = list(dict.fromkeys(a)), list(dict.fromkeys(b))
+    groups = [ids_for(dataset, words) for words in (a, b)]
+    centers = []
+    for group in groups:
+        center = dataset.units[group].mean(axis=0)
+        norm = np.linalg.norm(center)
+        if norm <= 1e-12:
+            raise DomainError(400, 'ZERO_DOMAIN_VECTOR', '领域中心接近零，请更换输入词。')
+        centers.append(center / norm)
+    sa, sb = [dataset.units @ center for center in centers]
+    score = np.minimum(sa, sb)
+    excluded = set(groups[0] + groups[1])
+    candidates = np.array([i for i in range(len(dataset.words)) if i not in excluded], dtype=int)
+    eligible = candidates[(sa[candidates] >= threshold) & (sb[candidates] >= threshold)]
+    order = eligible[np.lexsort((eligible, -(sa[eligible] + sb[eligible]) / 2, -score[eligible]))][:k]
+    return {'dataset_id': dataset.metadata['dataset_id'], 'algorithm_version': 'bridge-min-v1',
+            'space': space(dataset), 'a': a, 'b': b, 'shared_inputs': [w for w in a if w in b],
+            'candidate_scope': 'current_dataset', 'candidate_count': len(candidates), 'eligible_count': len(eligible),
+            'threshold': threshold, 'requested_k': k, 'returned_count': len(order),
+            'results': [{'id': int(i), 'word': dataset.words[i], 'sA': float(np.clip(sa[i], -1, 1)),
+                         'sB': float(np.clip(sb[i], -1, 1)), 'bridge': float(np.clip(score[i], -1, 1)),
+                         'evidence_status': 'vector_only'} for i in order]}
+
+
 def similarity(dataset: Dataset, words: list[str]) -> dict:
     units = dataset.units[ids_for(dataset, words)]
     return {"dataset_id": dataset.metadata["dataset_id"], "metric": "cosine", "space": space(dataset),

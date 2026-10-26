@@ -20,3 +20,11 @@ token 首尾去空白、长度 1–128、保留大小写/下划线。搜索先�
 统一错误：`{error:{code,message,details}}`。422 为结构/范围/非法 dataset_id，404 为未知词或未知数据集，400 为近零向量，503 为没有可用数据。code 包括 `VALIDATION_ERROR`、`WORD_NOT_FOUND`、`DATASET_NOT_FOUND`、`ZERO_TARGET_VECTOR`、`DATASET_UNAVAILABLE`。错误不返回本地路径和堆栈。
 
 请求示例：`POST /api/v1/analogy`，JSON 为 `{"dataset_id":"demo-v1","positive":["king","woman"],"negative":["man"],"k":10}`。所有分数由数据实际计算，不预设 queen 排名。
+# 连接探索接口（2026-10-26）
+
+`POST /api/v1/bridges`，JSON 示例：`{"dataset_id":"fasttext-en-zh-v1","a":["water"],"b":["energy"],"k":20,"threshold":0}`。
+
+A/B 各 1–5 个非空词，组内去重；k 为 1–50 整数（界面提供 10/20/50），threshold 为有限的 [0,1] 数值。输入词全部排除出候选。中心按单位向量均值归一化，近零阈值 1e-12。排序为 min(sA,sB) 降序、均值降序、ID 升序。
+
+返回 algorithm_version=`bridge-min-v1`、原始高维 space、规范化 a/b、shared_inputs、candidate_scope、排除输入后的 candidate_count、过滤后 eligible_count、requested_k/returned_count 和 results。每项含 id、word、sA、sB、bridge、evidence_status=`vector_only`。无匹配返回 200 和空列表；未收录词返回 404 WORD_NOT_FOUND，近零中心返回 400 ZERO_DOMAIN_VECTOR，参数非法返回 422。
+
